@@ -2,9 +2,6 @@ package com.logmon
 
 import akka.actor.{Actor, ActorLogging}
 import akka.actor.Props
-import akka.actor.typed.ActorRef
-import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.Behaviors
 
 object MeanHitsPerWindowActor {
   final case class Hit(line: String)
