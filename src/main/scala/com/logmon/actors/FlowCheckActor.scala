@@ -1,11 +1,12 @@
-package com.logmon
+package com.logmon.actors
 
-import akka.actor.{Actor, ActorLogging}
+import akka.actor.{Actor, ActorLogging, ActorRef}
 import akka.actor.Props
+import com.logmon.actors.StatsActor
 
 object FlowCheckActor {
   final case object Hit
-  final case object MeanHitsPerSecond
+  final case class MeanHitsPerSecond(logger: ActorRef)
 
   def props(period: Int, alertThreshold: Int): Props =
     Props(new FlowCheckActor(period, alertThreshold))
@@ -24,27 +25,19 @@ class FlowCheckActor(period: Int, alertThreshold: Int)
   ): Receive = {
     case FlowCheckActor.Hit =>
       context become meanHits(hitsWindow, hits + 1, alert)
-    case FlowCheckActor.MeanHitsPerSecond => {
+    case FlowCheckActor.MeanHitsPerSecond(logger) => {
       val window = if (hitsWindow.length == period) {
         (hits :: hitsWindow).drop(1)
       } else {
         hits :: hitsWindow
       }
       val mean = window.sum / window.length
-      log.info("Mean throughput (last 120s): {} msg/s ", mean)
+      // log.info("Mean throughput (last 120s): {} msg/s ", mean)
       val alertVal = if (!alert && mean > alertThreshold) {
-        log.warning(
-          "Alert: throughput {} msg/s (avg) exceeded threshold {}",
-          mean,
-          alertThreshold
-        )
+        logger ! StatsActor.LogAlarm(mean, alertThreshold)
         true
       } else if (alert && mean < alertThreshold) {
-        log.warning(
-          "Alert recovered: throughput {} msg/s (avg) below threshold {}",
-          mean,
-          alertThreshold
-        )
+        logger ! StatsActor.LogRecover(mean, alertThreshold)
         false
       } else {
         alert

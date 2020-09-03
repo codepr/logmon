@@ -1,46 +1,40 @@
-package com.logmon
+package com.logmon.actors
 
 import akka.actor.{Props, Actor, ActorLogging}
-import com.logmon.HttpLogParser.LogRecord
 
 object StatsActor {
-  final case class PutLogRecord(record: LogRecord)
-  final case object GetStats
+  final case class LogAggregated(
+      hits: Int,
+      routes: (String, Int),
+      statusCodes: (Int, Int)
+  )
+  final case class LogAlarm(throughput: Int, threshold: Int)
+  final case class LogRecover(throughput: Int, threshold: Int)
 
   def props(): Props = Props(classOf[StatsActor])
 }
 
 class StatsActor extends Actor with ActorLogging {
 
-  override def receive: Actor.Receive =
-    hitsPerSection(Map[String, Int]().empty, Map[Int, Int]().empty)
-
-  private def hitsPerSection(
-      routeHits: Map[String, Int],
-      statusHits: Map[Int, Int]
-  ): Receive = {
-    case StatsActor.PutLogRecord(record) => {
-      val routeCount = routeHits.getOrElse(record.route, 0) + 1
-      val statusCount = statusHits.getOrElse(record.statusCode, 0) + 1
-      context become hitsPerSection(
-        routeHits + (record.route -> routeCount),
-        statusHits + (record.statusCode -> statusCount)
+  override def receive: Receive = {
+    case StatsActor.LogAggregated(hits, routes, statusCodes) =>
+      val (route, routeHits) = routes
+      val (status, count) = routes
+      log.info(
+        s"Hits: $hits Top route: $route - $routeHits " +
+          s"hits Top status: $status - count count"
       )
-    }
-    case StatsActor.GetStats => {
-      try {
-        val (route, hits) = routeHits maxBy (_._2)
-        val (status, sHits) = statusHits maxBy (_._2)
-        log.debug(
-          "Max route {}:{} max status {}:{}",
-          route,
-          hits,
-          status,
-          sHits
-        )
-      } catch {
-        case _: UnsupportedOperationException => log.info("No records tracked")
-      }
-    }
+    case StatsActor.LogAlarm(throughput, threshold) =>
+      log.warning(
+        "Alert: throughput {} msg/s (avg) exceeded threshold {}",
+        throughput,
+        threshold
+      )
+    case StatsActor.LogRecover(throughput, threshold) =>
+      log.warning(
+        "Alert recovered: throughput {} msg/s (avg) below threshold {}",
+        throughput,
+        threshold
+      )
   }
 }

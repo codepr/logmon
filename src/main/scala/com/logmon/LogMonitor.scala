@@ -11,8 +11,9 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import scala.concurrent._
 import scala.concurrent.duration._
-import com.logmon.StatsActor._
-import com.logmon.FlowCheckActor._
+import com.logmon.actors.AggregatorActor
+import com.logmon.actors.FlowCheckActor
+import com.logmon.actors.StatsActor
 import HttpLogParser._
 import scala.language.postfixOps
 
@@ -24,7 +25,8 @@ object LogMonitor extends App {
   implicit val materializer = ActorMaterializer()
 
   val meanHitsActor = system.actorOf(FlowCheckActor.props(120, 30))
-  val hitsPerSection = system.actorOf(StatsActor.props())
+  val hitsPerSection = system.actorOf(AggregatorActor.props())
+  val statsActor = system.actorOf(StatsActor.props())
 
   import system.dispatcher
 
@@ -32,14 +34,14 @@ object LogMonitor extends App {
     1 second,
     1 second,
     meanHitsActor,
-    FlowCheckActor.MeanHitsPerSecond
+    FlowCheckActor.MeanHitsPerSecond(statsActor)
   )
 
   system.scheduler.schedule(
     10 second,
     10 second,
     hitsPerSection,
-    StatsActor.GetStats
+    AggregatorActor.LogStats(statsActor)
   )
 
   val tailSource: Source[ByteString, NotUsed] = FileTailSource(
@@ -55,7 +57,7 @@ object LogMonitor extends App {
     .runForeach(line => {
       meanHitsActor ! FlowCheckActor.Hit
       HttpLogParser.parse(line) map (r =>
-        hitsPerSection ! StatsActor.PutLogRecord(r)
+        hitsPerSection ! AggregatorActor.PutLogRecord(r)
       )
     })
 }
