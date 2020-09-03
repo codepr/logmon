@@ -11,8 +11,8 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import scala.concurrent._
 import scala.concurrent.duration._
-import com.logmon.HitsPerSectionActor._
-import com.logmon.MeanHitsPerWindowActor._
+import com.logmon.StatsActor._
+import com.logmon.FlowCheckActor._
 import HttpLogParser._
 import scala.language.postfixOps
 
@@ -23,8 +23,8 @@ object LogMonitor extends App {
   implicit val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
 
-  val meanHitsActor = system.actorOf(MeanHitsPerWindowActor.props(120, 30))
-  val hitsPerSection = system.actorOf(HitsPerSectionActor.props())
+  val meanHitsActor = system.actorOf(FlowCheckActor.props(120, 30))
+  val hitsPerSection = system.actorOf(StatsActor.props())
 
   import system.dispatcher
 
@@ -32,14 +32,14 @@ object LogMonitor extends App {
     1 second,
     1 second,
     meanHitsActor,
-    MeanHitsPerWindowActor.MeanHitsPerSecond
+    FlowCheckActor.MeanHitsPerSecond
   )
 
   system.scheduler.schedule(
     10 second,
     10 second,
     hitsPerSection,
-    HitsPerSectionActor.GetStats
+    StatsActor.GetStats
   )
 
   val tailSource: Source[ByteString, NotUsed] = FileTailSource(
@@ -53,7 +53,9 @@ object LogMonitor extends App {
     .via(Framing.delimiter(ByteString("\n"), chunkSize))
     .map(_.utf8String)
     .runForeach(line => {
-      meanHitsActor ! MeanHitsPerWindowActor.Hit
-      HttpLogParser.parse(line) map (r => hitsPerSection ! HitsPerSectionActor.PutLogRecord(r))
+      meanHitsActor ! FlowCheckActor.Hit
+      HttpLogParser.parse(line) map (r =>
+        hitsPerSection ! StatsActor.PutLogRecord(r)
+      )
     })
 }
