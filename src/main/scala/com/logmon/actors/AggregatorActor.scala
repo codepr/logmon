@@ -1,3 +1,7 @@
+/**
+  * Aggreagate some stats from the log stream, like top routes hit or the max
+  * number of status code etc.
+  */
 package com.logmon.actors
 
 import akka.actor.{Props, Actor, ActorLogging, ActorRef}
