@@ -13,16 +13,13 @@ import scala.concurrent._
 import scala.concurrent.duration._
 import com.logmon.HitsPerSectionActor._
 import com.logmon.MeanHitsPerWindowActor._
+import HttpLogParser._
 import scala.language.postfixOps
-
-object HttpLogParser {
-  def extractSection(line: String): String = line.split(" ")(6)
-}
 
 object LogMonitor extends App {
   val path: Path = Paths.get("access.log")
 
-  val maxLineSize = 8192
+  val chunkSize = 8192
   implicit val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
 
@@ -35,28 +32,28 @@ object LogMonitor extends App {
     1 second,
     1 second,
     meanHitsActor,
-    MeanHitsPerWindowActor.MeanHitsPerSecond()
+    MeanHitsPerWindowActor.MeanHitsPerSecond
   )
 
   system.scheduler.schedule(
     10 second,
     10 second,
     hitsPerSection,
-    HitsPerSectionActor.SectionCount()
+    HitsPerSectionActor.GetStats
   )
 
   val tailSource: Source[ByteString, NotUsed] = FileTailSource(
     path = path,
-    maxChunkSize = maxLineSize,
+    maxChunkSize = chunkSize,
     startingPosition = 0,
-    pollingInterval = 500.millis
+    pollingInterval = 500 millis
   )
 
   tailSource
-    .via(Framing.delimiter(ByteString("\n"), 8192))
+    .via(Framing.delimiter(ByteString("\n"), chunkSize))
     .map(_.utf8String)
     .runForeach(line => {
-      meanHitsActor ! MeanHitsPerWindowActor.Hit(line)
-      hitsPerSection ! HitsPerSectionActor.Section(HttpLogParser.extractSection(line))
+      meanHitsActor ! MeanHitsPerWindowActor.Hit
+      HttpLogParser.parse(line) map (r => hitsPerSection ! HitsPerSectionActor.PutLogRecord(r))
     })
 }
